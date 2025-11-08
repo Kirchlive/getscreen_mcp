@@ -1,0 +1,31 @@
+{
+  "name": "getscreen",
+  "version": "1.0.0",
+  "description": "Lightweight MCP server for capturing screenshots from all monitors with compression",
+  "type": "module",
+  "bin": {
+    "getscreen": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "watch": "tsc --watch"
+  },
+  "keywords": [
+    "mcp",
+    "screenshot",
+    "monitor",
+    "capture"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "screenshot-desktop": "^1.15.0",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2"
+  }
+}
