@@ -68,12 +68,17 @@ foreach ($screen in $screens) {
   try {
     // Write PowerShell script to temporary file
     writeFileSync(scriptPath, psScript, { encoding: "utf8" });
+    console.error(`[GetScreen] PowerShell script written to: ${scriptPath}`);
 
     // Execute PowerShell script from file
+    console.error(`[GetScreen] Executing PowerShell...`);
     const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`, {
       encoding: "utf8",
       maxBuffer: 100 * 1024 * 1024, // 100MB buffer for large screenshots
     });
+
+    console.error(`[GetScreen] PowerShell output length: ${output.length} chars`);
+    console.error(`[GetScreen] PowerShell output preview: ${output.substring(0, 200)}...`);
 
     // Parse the output to extract base64 screenshots
     const screenshots: Array<{ data: string; mimeType: string }> = [];
@@ -81,6 +86,7 @@ foreach ($screen in $screens) {
     let match;
 
     while ((match = regex.exec(output)) !== null) {
+      console.error(`[GetScreen] Found screenshot marker, processing...`);
       const pngBase64 = match[1].trim();
       const pngBuffer = Buffer.from(pngBase64, "base64");
 
@@ -97,12 +103,15 @@ foreach ($screen in $screens) {
       const compressed = await sharpInstance.toBuffer();
       const base64 = compressed.toString("base64");
 
+      console.error(`[GetScreen] Compressed screenshot: ${compressed.length} bytes, base64: ${base64.length} chars`);
+
       screenshots.push({
         data: base64,
         mimeType: "image/jpeg",
       });
     }
 
+    console.error(`[GetScreen] Total screenshots captured: ${screenshots.length}`);
     return screenshots;
   } catch (error) {
     throw new Error(
@@ -176,12 +185,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     let screenshots: Array<{ data: string; mimeType: string }>;
 
     // Check if running in WSL
-    if (isWSL()) {
+    const wslDetected = isWSL();
+    console.error(`[GetScreen] WSL detected: ${wslDetected}`);
+    console.error(`[GetScreen] Quality: ${quality}, MaxWidth: ${maxWidth || 'none'}`);
+
+    if (wslDetected) {
       // Use PowerShell to capture screenshots on Windows host
+      console.error('[GetScreen] Using PowerShell method for WSL');
       screenshots = await captureScreenshotWSL(quality, maxWidth);
+      console.error(`[GetScreen] PowerShell returned ${screenshots.length} screenshots`);
     } else {
       // Use native screenshot-desktop for Linux/macOS
+      console.error('[GetScreen] Using native screenshot-desktop');
       const displays = await screenshot.listDisplays();
+      console.error(`[GetScreen] Found ${displays.length} displays`);
 
       // Capture screenshots from all monitors in parallel
       const screenshotPromises = displays.map(async (display) => {
@@ -207,10 +224,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       });
 
       screenshots = await Promise.all(screenshotPromises);
+      console.error(`[GetScreen] Native method returned ${screenshots.length} screenshots`);
     }
 
     // Return results with embedded images
-    return {
+    console.error(`[GetScreen] Preparing response with ${screenshots.length} images`);
+    const result = {
       content: screenshots.map((shot) => ({
         type: "image" as const,
         data: shot.data,
@@ -218,8 +237,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       })),
       isError: false,
     };
+    console.error(`[GetScreen] Response prepared, content items: ${result.content.length}`);
+    return result;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[GetScreen] ERROR: ${errorMessage}`);
+    console.error(`[GetScreen] Stack: ${error instanceof Error ? error.stack : 'N/A'}`);
     return {
       content: [
         {
