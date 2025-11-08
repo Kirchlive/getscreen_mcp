@@ -10,7 +10,9 @@ import {
 import screenshot from "screenshot-desktop";
 import sharp from "sharp";
 import { execSync } from "child_process";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 // Detect if running in WSL
 function isWSL(): boolean {
@@ -59,9 +61,16 @@ foreach ($screen in $screens) {
 }
 `;
 
+  // Create a temporary PowerShell script file to avoid escaping issues
+  const tempDir = tmpdir();
+  const scriptPath = join(tempDir, `getscreen-${Date.now()}.ps1`);
+
   try {
-    // Execute PowerShell script
-    const output = execSync(`powershell.exe -NoProfile -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, "; ")}"`, {
+    // Write PowerShell script to temporary file
+    writeFileSync(scriptPath, psScript, { encoding: "utf8" });
+
+    // Execute PowerShell script from file
+    const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`, {
       encoding: "utf8",
       maxBuffer: 100 * 1024 * 1024, // 100MB buffer for large screenshots
     });
@@ -99,6 +108,13 @@ foreach ($screen in $screens) {
     throw new Error(
       `Failed to capture screenshots via PowerShell: ${error instanceof Error ? error.message : String(error)}`
     );
+  } finally {
+    // Clean up temporary file
+    try {
+      unlinkSync(scriptPath);
+    } catch {
+      // Ignore cleanup errors
+    }
   }
 }
 
