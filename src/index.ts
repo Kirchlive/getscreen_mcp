@@ -10,7 +10,7 @@ import {
 import screenshot from "screenshot-desktop";
 import sharp from "sharp";
 import { execSync } from "child_process";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, unlinkSync } from "fs";
 
 // Detect if running in WSL
 function isWSL(): boolean {
@@ -31,12 +31,10 @@ async function captureScreenshotWSL(
   maxWidth?: number
 ): Promise<Array<{ data: string; mimeType: string }>> {
   // PowerShell script to capture all screens and return as base64
-  const psScript = `
-Add-Type -AssemblyName System.Windows.Forms
+  const psScript = `Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 $screens = [System.Windows.Forms.Screen]::AllScreens
-$results = @()
 
 foreach ($screen in $screens) {
     $bounds = $screen.Bounds
@@ -56,14 +54,18 @@ foreach ($screen in $screens) {
     $graphics.Dispose()
     $bitmap.Dispose()
     $ms.Dispose()
-}
-`;
+}`;
 
+  const tmpFile = `/tmp/getscreen_${Date.now()}.ps1`;
+  
   try {
-    // Execute PowerShell script
-    const output = execSync(`powershell.exe -NoProfile -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, "; ")}"`, {
+    // Write script to temp file to avoid escaping issues with variables
+    writeFileSync(tmpFile, psScript);
+
+    // Execute PowerShell script from file with ExecutionPolicy bypass
+    const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${tmpFile}"`, {
       encoding: "utf8",
-      maxBuffer: 100 * 1024 * 1024, // 100MB buffer for large screenshots
+      maxBuffer: 100 * 1024 * 1024,
     });
 
     // Parse the output to extract base64 screenshots
@@ -99,6 +101,13 @@ foreach ($screen in $screens) {
     throw new Error(
       `Failed to capture screenshots via PowerShell: ${error instanceof Error ? error.message : String(error)}`
     );
+  } finally {
+    // Clean up temp file
+    try {
+      unlinkSync(tmpFile);
+    } catch (e) {
+      // Ignore cleanup errors
+    }
   }
 }
 

@@ -1,115 +1,110 @@
 # GetScreen MCP Server
 
-Ein leichtgewichtiger Model Context Protocol (MCP) Server für die schnelle Erfassung von Screenshots aller verfügbaren Monitore mit automatischer Kompression.
+A lightweight Model Context Protocol (MCP) Server for rapid capture of screenshots from all available monitors with automatic compression.
 
 ## Features
 
-- **Multi-Monitor Support**: Erfasst automatisch alle angeschlossenen Displays
-- **WSL-Unterstützung**: Funktioniert nahtlos in Windows WSL durch PowerShell-Integration
-- **Schnelle Kompression**: Nutzt Sharp für optimale JPEG-Kompression
-- **Einfache Integration**: Ein einziges Tool mit optionalen Parametern
-- **Lightweight**: Minimale Dependencies, maximale Performance
-- **Plattformübergreifend**: Linux, macOS und Windows (inkl. WSL)
+- **Multi-Monitor Support**: Automatically captures all connected displays
+- **WSL Support**: Works seamlessly in Windows WSL through PowerShell integration
+- **Fast Compression**: Utilizes Sharp for optimal JPEG compression
+- **Simple Integration**: Single tool with optional parameters
+- **Lightweight**: Minimal dependencies, maximum performance
+- **Cross-Platform**: Linux, macOS, and Windows (including WSL)
+
+## New Features
+
+### Enhanced WSL Support
+
+WSL support has been improved with automatic detection and PowerShell integration. The tool now works seamlessly whether you use the `wsl` command approach or the simpler Node-based direct execution method.
+
+**Key Features:**
+- Automatic WSL detection via `/proc/version` environment inspection
+- Seamless PowerShell integration for capturing Windows host displays
+- Support for both direct Node execution and WSL command wrapper
+- No additional configuration needed for WSL environment detection
+
+**How It Works:**
+When running in WSL, the tool automatically detects the environment and leverages PowerShell on the Windows host to capture screenshots. This approach ensures access to all display information from the Windows side while maintaining full compatibility with WSL-based tools.
 
 ## Installation
 
 ```bash
+git clone https://github.com/Kirchlive/getscreen_mcp.git
+cd getscreen_mcp
 npm install
 npm run build
 ```
 
-## Konfiguration
+## Configuration
 
-### Claude Desktop
+### Claude Code
 
-Füge folgendes zu deiner Claude Desktop Konfiguration hinzu:
+Add the following to your Claude configuration:
 
-**MacOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
-**Linux**: `~/.config/Claude/claude_desktop_config.json`
+**macOS**: 
+`~/Users/USERNAME/.claude.json`
+**Windows**: 
+`C:\Users\USERNAME\.claude.json`
+**Linux/WSL**: 
+`~/home/USERNAME/.claude.json`
 
 ```json
 {
   "mcpServers": {
     "getscreen": {
       "command": "node",
-      "args": ["/absolute/path/to/getscreen_mcp/build/index.js"]
+      "args": ["/ABSOLUT/PATH/TO/getscreen_mcp/build/index.js"]
     }
   }
 }
 ```
 
-### Windows WSL Konfiguration
-
-Wenn du Claude Desktop auf Windows verwendest und das MCP in WSL ausführst:
-
-```json
-{
-  "mcpServers": {
-    "getscreen": {
-      "command": "wsl",
-      "args": [
-        "-d", "Ubuntu",
-        "node",
-        "/home/username/getscreen_mcp/build/index.js"
-      ]
-    }
-  }
-}
-```
-
-**Wichtig für WSL**:
-- Ersetze `Ubuntu` mit dem Namen deiner WSL-Distribution (siehe `wsl -l`)
-- Verwende den Linux-Pfad innerhalb von WSL (z.B. `/home/username/...`)
-- Das Tool erkennt automatisch WSL und nutzt PowerShell für Screenshots vom Windows-Host
-- PowerShell muss auf dem Windows-Host verfügbar sein (standardmäßig installiert)
-
-## Verwendung
+## Usage
 
 ### Screenshot Tool
 
-Das `screenshot` Tool erfasst alle verfügbaren Monitore und gibt die komprimierten Bilder zurück.
+The `screenshot` tool captures all available monitors and returns the compressed images.
 
-**Parameter** (alle optional):
-- `quality` (number, 1-100): JPEG-Qualität. Standard: 80
-- `maxWidth` (number): Maximale Breite in Pixeln. Bilder werden proportional verkleinert.
+**Parameters** (all optional):
+- `quality` (number, 1-100): JPEG quality. Default: 80
+- `maxWidth` (number): Maximum width in pixels. Images are resized proportionally.
 
-**Beispiele**:
-
-```
-Nimm einen Screenshot auf
-```
+**Examples**:
 
 ```
-Nimm einen Screenshot mit hoher Qualität auf (quality: 95)
+Take a screenshot
 ```
 
 ```
-Nimm einen Screenshot auf und verkleinere ihn auf max. 1920px Breite (maxWidth: 1920)
+Take a screenshot with high quality (quality: 95)
 ```
 
-## Technische Details
+```
+Take a screenshot and resize it to max. 1920px width (maxWidth: 1920)
+```
 
-### Plattform-Erkennung
-Das Tool erkennt automatisch die Umgebung und wählt die optimale Methode:
-- **WSL**: Nutzt PowerShell auf dem Windows-Host via `powershell.exe`
-- **Linux/macOS**: Verwendet `screenshot-desktop` für native Erfassung
+## Technical Details
 
-### Komponenten
-- **Erfassung WSL**: PowerShell System.Windows.Forms und System.Drawing
-- **Erfassung Native**: `screenshot-desktop` für Linux/macOS
-- **Kompression**: `sharp` für schnelle Bildverarbeitung und JPEG-Kompression
-- **Format**: Bilder werden als base64-kodierte JPEGs zurückgegeben
-- **Performance**: Parallele Erfassung aller Monitore für maximale Geschwindigkeit
+### Platform Detection
+The tool automatically detects the environment and selects the optimal method:
+- **WSL**: Uses PowerShell on the Windows host via `powershell.exe`
+- **Linux/macOS**: Uses `screenshot-desktop` for native capture
 
-### WSL-Implementierung
-In WSL-Umgebungen:
-1. Erkennung über `/proc/version` (prüft auf "microsoft" oder "WSL")
-2. PowerShell-Skript wird auf Windows-Host ausgeführt
-3. Alle Monitore werden über `System.Windows.Forms.Screen::AllScreens` erfasst
-4. Screenshots als PNG erfasst, dann zu JPEG mit gewünschter Qualität komprimiert
-5. Base64-kodierte Übertragung zurück ins WSL
+### Components
+- **WSL Capture**: PowerShell System.Windows.Forms and System.Drawing
+- **Native Capture**: `screenshot-desktop` for Linux/macOS
+- **Compression**: `sharp` for fast image processing and JPEG compression
+- **Format**: Images are returned as base64-encoded JPEGs
+- **Performance**: Parallel capture of all monitors for maximum speed
 
-## Lizenz
+### WSL Implementation
+In WSL environments:
+1. Detection via `/proc/version` (checks for "microsoft" or "WSL")
+2. PowerShell script is executed on Windows host
+3. All monitors are captured via `System.Windows.Forms.Screen::AllScreens`
+4. Screenshots captured as PNG, then compressed to JPEG with desired quality
+5. Base64-encoded transmission back to WSL
+
+## License
 
 MIT
