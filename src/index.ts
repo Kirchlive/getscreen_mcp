@@ -9,6 +9,98 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import screenshot from "screenshot-desktop";
 import sharp from "sharp";
+import { execSync } from "child_process";
+import { readFileSync, existsSync } from "fs";
+
+// Detect if running in WSL
+function isWSL(): boolean {
+  try {
+    if (existsSync("/proc/version")) {
+      const procVersion = readFileSync("/proc/version", "utf8");
+      return /microsoft|WSL/i.test(procVersion);
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// Capture screenshot using PowerShell on Windows (called from WSL)
+async function captureScreenshotWSL(
+  quality: number,
+  maxWidth?: number
+): Promise<Array<{ data: string; mimeType: string }>> {
+  // PowerShell script to capture all screens and return as base64
+  const psScript = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+$screens = [System.Windows.Forms.Screen]::AllScreens
+$results = @()
+
+foreach ($screen in $screens) {
+    $bounds = $screen.Bounds
+    $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+
+    $ms = New-Object System.IO.MemoryStream
+    $bitmap.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+    $bytes = $ms.ToArray()
+    $base64 = [Convert]::ToBase64String($bytes)
+
+    Write-Output "SCREENSHOT_START"
+    Write-Output $base64
+    Write-Output "SCREENSHOT_END"
+
+    $graphics.Dispose()
+    $bitmap.Dispose()
+    $ms.Dispose()
+}
+`;
+
+  try {
+    // Execute PowerShell script
+    const output = execSync(`powershell.exe -NoProfile -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, "; ")}"`, {
+      encoding: "utf8",
+      maxBuffer: 100 * 1024 * 1024, // 100MB buffer for large screenshots
+    });
+
+    // Parse the output to extract base64 screenshots
+    const screenshots: Array<{ data: string; mimeType: string }> = [];
+    const regex = /SCREENSHOT_START\s+([\s\S]+?)\s+SCREENSHOT_END/g;
+    let match;
+
+    while ((match = regex.exec(output)) !== null) {
+      const pngBase64 = match[1].trim();
+      const pngBuffer = Buffer.from(pngBase64, "base64");
+
+      // Convert PNG to JPEG with compression using sharp
+      let sharpInstance = sharp(pngBuffer).jpeg({ quality });
+
+      if (maxWidth) {
+        sharpInstance = sharpInstance.resize(maxWidth, null, {
+          fit: "inside",
+          withoutEnlargement: true,
+        });
+      }
+
+      const compressed = await sharpInstance.toBuffer();
+      const base64 = compressed.toString("base64");
+
+      screenshots.push({
+        data: base64,
+        mimeType: "image/jpeg",
+      });
+    }
+
+    return screenshots;
+  } catch (error) {
+    throw new Error(
+      `Failed to capture screenshots via PowerShell: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
 
 // Tool definitions
 const SCREENSHOT_TOOL: Tool = {
@@ -65,35 +157,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const maxWidth = request.params.arguments?.maxWidth as number | undefined;
 
   try {
-    // Get all available displays
-    const displays = await screenshot.listDisplays();
+    let screenshots: Array<{ data: string; mimeType: string }>;
 
-    // Capture screenshots from all monitors in parallel
-    const screenshotPromises = displays.map(async (display) => {
-      const imgBuffer = await screenshot({ screen: display.id });
+    // Check if running in WSL
+    if (isWSL()) {
+      // Use PowerShell to capture screenshots on Windows host
+      screenshots = await captureScreenshotWSL(quality, maxWidth);
+    } else {
+      // Use native screenshot-desktop for Linux/macOS
+      const displays = await screenshot.listDisplays();
 
-      // Compress and optionally resize using sharp
-      let sharpInstance = sharp(imgBuffer).jpeg({ quality });
+      // Capture screenshots from all monitors in parallel
+      const screenshotPromises = displays.map(async (display) => {
+        const imgBuffer = await screenshot({ screen: display.id });
 
-      if (maxWidth) {
-        sharpInstance = sharpInstance.resize(maxWidth, null, {
-          fit: "inside",
-          withoutEnlargement: true,
-        });
-      }
+        // Compress and optionally resize using sharp
+        let sharpInstance = sharp(imgBuffer).jpeg({ quality });
 
-      const compressed = await sharpInstance.toBuffer();
-      const base64 = compressed.toString("base64");
+        if (maxWidth) {
+          sharpInstance = sharpInstance.resize(maxWidth, null, {
+            fit: "inside",
+            withoutEnlargement: true,
+          });
+        }
 
-      return {
-        displayId: display.id,
-        displayName: display.name,
-        data: base64,
-        mimeType: "image/jpeg",
-      };
-    });
+        const compressed = await sharpInstance.toBuffer();
+        const base64 = compressed.toString("base64");
 
-    const screenshots = await Promise.all(screenshotPromises);
+        return {
+          data: base64,
+          mimeType: "image/jpeg",
+        };
+      });
+
+      screenshots = await Promise.all(screenshotPromises);
+    }
 
     // Return results with embedded images
     return {
