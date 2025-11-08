@@ -11,6 +11,8 @@ import screenshot from "screenshot-desktop";
 import sharp from "sharp";
 import { execSync } from "child_process";
 import { readFileSync, existsSync, writeFileSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 // Detect if running in WSL
 function isWSL(): boolean {
@@ -31,10 +33,12 @@ async function captureScreenshotWSL(
   maxWidth?: number
 ): Promise<Array<{ data: string; mimeType: string }>> {
   // PowerShell script to capture all screens and return as base64
-  const psScript = `Add-Type -AssemblyName System.Windows.Forms
+  const psScript = `
+Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 $screens = [System.Windows.Forms.Screen]::AllScreens
+$results = @()
 
 foreach ($screen in $screens) {
     $bounds = $screen.Bounds
@@ -54,18 +58,21 @@ foreach ($screen in $screens) {
     $graphics.Dispose()
     $bitmap.Dispose()
     $ms.Dispose()
-}`;
+}
+`;
 
-  const tmpFile = `/tmp/getscreen_${Date.now()}.ps1`;
-  
+  // Create a temporary PowerShell script file to avoid escaping issues
+  const tempDir = tmpdir();
+  const scriptPath = join(tempDir, `getscreen-${Date.now()}.ps1`);
+
   try {
-    // Write script to temp file to avoid escaping issues with variables
-    writeFileSync(tmpFile, psScript);
+    // Write PowerShell script to temporary file
+    writeFileSync(scriptPath, psScript, { encoding: "utf8" });
 
-    // Execute PowerShell script from file with ExecutionPolicy bypass
-    const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${tmpFile}"`, {
+    // Execute PowerShell script from file
+    const output = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`, {
       encoding: "utf8",
-      maxBuffer: 100 * 1024 * 1024,
+      maxBuffer: 100 * 1024 * 1024, // 100MB buffer for large screenshots
     });
 
     // Parse the output to extract base64 screenshots
@@ -102,10 +109,10 @@ foreach ($screen in $screens) {
       `Failed to capture screenshots via PowerShell: ${error instanceof Error ? error.message : String(error)}`
     );
   } finally {
-    // Clean up temp file
+    // Clean up temporary file
     try {
-      unlinkSync(tmpFile);
-    } catch (e) {
+      unlinkSync(scriptPath);
+    } catch {
       // Ignore cleanup errors
     }
   }
